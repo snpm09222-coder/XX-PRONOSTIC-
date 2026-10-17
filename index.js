@@ -28,7 +28,7 @@ function calculatePrediction(formHome, formAway) {
   let pHome = (pH2H_Home * 0.30) + (formHome * 0.40) + ((100 - formAway) * 0.30);
   let pDraw = pH2H_Draw; let pAway = (pH2H_Away * 0.30) + (formAway * 0.40) + ((100 - formHome) * 0.30);
   pHome += 3; const total = pHome + pDraw + pAway;
-  return { home: (pHome / total) * 100, draw: (pDraw / total) * 100, away: (pAway / total) * 100, brut: { home: pHome, draw: pDraw, away: pAway } };
+  return { home: (pHome / total) * 100, draw: (pDraw / total) * 100, away: (pAway / total) * 100 };
 }
 
 async function analyse(v1, v2) {
@@ -41,14 +41,17 @@ async function analyse(v1, v2) {
       if (i + j > 2.5) over += p; if (i > 0 && j > 0) gg += p;
   }}
   const sum = p1 + pd + p2; scores.sort((a, b) => b.p - a.p);
-  const cTotal = l1 * 3.8 + l2 * 3.8 + 5; const tTotal = l1 * 7.2 + l2 * 7.2 + 6; const tCadres = tTotal * 0.38;
+  // CORRECTION CORNERS ICI - AVANT 3.8, MAINTENANT 1.5 = REALISTE
+  const cTotal = l1 * 1.5 + l2 * 1.5 + 6.5;
+  const tTotal = l1 * 3.2 + l2 * 3.2 + 12;
+  const tCadres = tTotal * 0.36;
   return {
     v1: v1, v2: v2, l1: l1, l2: l2, team1: t1, team2: t2, fusion: pred,
     pH: p1 / sum, pD: pd / sum, pA: p2 / sum, pOver: over / sum, pGG: gg / sum,
     coteH: sum / p1, coteD: sum / pd, coteA: sum / p2, coteOver: sum / over, coteGG: sum / gg,
     top: scores.slice(0, 5),
-    corners: { total: cTotal, over9: probaOver(cTotal, 9.5), coteOver9: 1 / probaOver(cTotal, 9.5) },
-    tirs: { total: tTotal, cadresTotal: tCadres, over22: probaOver(tTotal, 22.5), coteOver22: 1 / probaOver(tTotal, 22.5), overCadres8: probaOver(tCadres, 8.5), coteOverCadres8: 1 / probaOver(tCadres, 8.5) }
+    corners: { total: cTotal, over9: probaOver(cTotal, 9.5), coteOver9: 1 / probaOver(cTotal, 9.5), under9: 1 - probaOver(cTotal, 9.5) },
+    tirs: { total: tTotal, cadresTotal: tCadres, over22: probaOver(tTotal, 22.5), coteOver22: 1 / probaOver(tTotal, 22.5) }
   };
 }
 
@@ -64,7 +67,7 @@ async function getMatchsDuJour() {
       });}
     }
   } catch {}
-  if (list.length < 3) { list = [ { home: 'Everton', away: 'Chelsea', league: 'eng.1' }, { home: 'Atletico Madrid', away: 'Espanyol', league: 'esp.1' }, { home: 'Burnley', away: 'Wolves', league: 'eng.1' }, { home: 'Arsenal', away: 'Tottenham', league: 'eng.1' }, { home: 'Le Mans', away: 'Toulouse', league: 'fra.1' } ]; }
+  if (list.length < 3) { list = [ { home: 'Espanyol', away: 'Atletico Madrid', league: 'esp.1' }, { home: 'Villarreal', away: 'Elche', league: 'esp.1' }, { home: 'Real Betis', away: 'Barcelona', league: 'esp.1' }, { home: 'Valencia', away: 'Athletic Club', league: 'esp.1' }, { home: 'Everton', away: 'Chelsea', league: 'eng.1' } ]; }
   return { date: iso, list: list.slice(0, 10) };
 }
 
@@ -96,7 +99,7 @@ async function deploy() {
 }
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-client.once('ready', async () => { console.log('V5 ULTRA READY - DYNAMIQUE + BOOK + COUPON'); await deploy(); });
+client.once('ready', async () => { console.log('V5 ULTRA CORRIGE - CORNERS REALISTES'); await deploy(); });
 
 client.on('messageCreate', async msg => {
   if (msg.author.bot) return; const low = msg.content.toLowerCase();
@@ -105,37 +108,35 @@ client.on('messageCreate', async msg => {
     let raw = msg.content.slice(8).trim(); if (!raw) { await msg.reply('Usage:!analyse Everton vs Chelsea'); return; }
     let v1, v2; if (raw.toLowerCase().includes('vs')) { const p = raw.split(/vs/i); v1 = p[0].trim(); v2 = p[1].trim(); } else { const p = raw.split(' '); v1 = p[0].trim(); v2 = p.slice(1).join(' ').trim() || 'Chelsea'; }
     const r = await analyse(v1, v2);
-    let txt = '**' + v1.toUpperCase() + ' vs ' + v2.toUpperCase() + ' - V5 ULTRA**\n\n';
-    txt += 'ETAPE 1 - FORME PONDERE (coef 1.0,0.95...):\n' + v1 + ': ' + r.team1.formePct.toFixed(1) + '% | ' + v2 + ': ' + r.team2.formePct.toFixed(1) + '%\nForme dom: ' + r.team1.formePct.toFixed(1) + '% vs ext: ' + r.team2.formePct.toFixed(1) + '%\n\n';
-    txt += 'ETAPE 2 - H2H: Base 38% / 27% / 35%\n\n';
-    txt += 'ETAPE 3 - BUTS: ' + r.team1.goalsFor + ' vs ' + r.team2.goalsFor + ' = ' + r.team1.goalsAvg.toFixed(2) + ' vs ' + r.team2.goalsAvg.toFixed(2) + '\n\n';
-    txt += 'ETAPE 4 - FUSION (30% H2H + 40% dom + 30% ext):\nFINAL: 1=' + r.fusion.home.toFixed(1) + '% N=' + r.fusion.draw.toFixed(1) + '% 2=' + r.fusion.away.toFixed(1) + '%\nCotes fusion: 1=' + (100 / r.fusion.home).toFixed(2) + ' N=' + (100 / r.fusion.draw).toFixed(2) + ' 2=' + (100 / r.fusion.away).toFixed(2) + '\n\n';
-    txt += 'ETAPE 5 - POISSON (lambda=' + r.l1.toFixed(2) + ' vs ' + r.l2.toFixed(2) + '):\nSCORE EXACT: ' + r.top[0].s + ' ' + (r.top[0].p * 100).toFixed(2) + '% Cote ' + (1 / r.top[0].p).toFixed(2) + '\nAutres: ' + r.top[1].s + ' ' + (r.top[1].p * 100).toFixed(2) + '% | ' + r.top[2].s + ' ' + (r.top[2].p * 100).toFixed(2) + '%\nPoisson: 1=' + (r.pH * 100).toFixed(1) + '% N=' + (r.pD * 100).toFixed(1) + '% 2=' + (r.pA * 100).toFixed(1) + '% Over=' + (r.pOver * 100).toFixed(1) + '% GG=' + (r.pGG * 100).toFixed(1) + '%\n\n';
-    txt += 'ETAPE 6-7 - CORNERS + TIRS:\nCorners: ' + r.corners.total.toFixed(1) + ' Over9.5=' + (r.corners.over9 * 100).toFixed(1) + '% Cote ' + r.corners.coteOver9.toFixed(2) + '\nTirs: ' + r.tirs.total.toFixed(1) + ' Cadres:' + r.tirs.cadresTotal.toFixed(1) + ' Over22.5=' + (r.tirs.over22 * 100).toFixed(1) + '% Cote ' + r.tirs.coteOver22.toFixed(2);
+    let txt = '**' + v1.toUpperCase() + ' vs ' + v2.toUpperCase() + ' - V5 CORRIGE**\n\n';
+    txt += 'ETAPE 1 - FORME: ' + v1 + ' ' + r.team1.formePct.toFixed(1) + '% | ' + v2 + ' ' + r.team2.formePct.toFixed(1) + '%\n\n';
+    txt += 'ETAPE 4 - FUSION: 1=' + r.fusion.home.toFixed(1) + '% N=' + r.fusion.draw.toFixed(1) + '% 2=' + r.fusion.away.toFixed(1) + '%\n\n';
+    txt += 'ETAPE 5 - POISSON (lambda=' + r.l1.toFixed(2) + ' vs ' + r.l2.toFixed(2) + '):\nSCORE EXACT: ' + r.top[0].s + ' ' + (r.top[0].p * 100).toFixed(1) + '% Cote ' + (1 / r.top[0].p).toFixed(2) + '\nPoisson: 1=' + (r.pH * 100).toFixed(0) + '% N=' + (r.pD * 100).toFixed(0) + '% 2=' + (r.pA * 100).toFixed(0) + '% Over=' + (r.pOver * 100).toFixed(0) + '% GG=' + (r.pGG * 100).toFixed(0) + '%\n\n';
+    txt += 'CORNERS: ' + r.corners.total.toFixed(1) + ' -> Over9.5=' + (r.corners.over9 * 100).toFixed(0) + '% Cote ' + r.corners.coteOver9.toFixed(2) + '\nTIRS: ' + r.tirs.total.toFixed(1) + ' Over22.5=' + (r.tirs.over22 * 100).toFixed(0) + '%';
     await msg.reply(txt);
   }
 
   if (low.startsWith('!calendrier')) {
-    const m = await getMatchsDuJour(); let txt = 'CALENDRIER V5 ULTRA - ' + m.date + '\n\n';
-    for (let i = 0; i < m.list.length; i++) { const f = m.list[i]; const r = await analyse(f.home, f.away); txt += (i + 1) + '. ' + f.home + ' vs ' + f.away + '\n -> Fusion: 1=' + r.fusion.home.toFixed(0) + '% N=' + r.fusion.draw.toFixed(0) + '% 2=' + r.fusion.away.toFixed(0) + '% | Score:' + r.top[0].s + ' | Corners:' + r.corners.total.toFixed(0) + '\n'; }
+    const m = await getMatchsDuJour(); let txt = 'CALENDRIER V5 CORRIGE - ' + m.date + '\n\n';
+    for (let i = 0; i < m.list.length; i++) { const f = m.list[i]; const r = await analyse(f.home, f.away); txt += (i + 1) + '. ' + f.home + ' vs ' + f.away + '\n -> Score:' + r.top[0].s + ' | Corners:' + r.corners.total.toFixed(1) + ' | Over9.5 ' + (r.corners.over9 * 100).toFixed(0) + '%\n'; }
     await msg.reply(txt);
   }
 
   if (low.startsWith('!coupon')) {
-    const m = await getMatchsDuJour(); let txt = 'COUPON V5 ULTRA - ' + m.date + '\n\n'; let total = 1;
+    const m = await getMatchsDuJour(); let txt = 'COUPON V5 CORRIGE - ' + m.date + '\n\n'; let total = 1;
     for (let i = 0; i < 5 && i < m.list.length; i++) {
       const f = m.list[i]; const r = await analyse(f.home, f.away);
       let choix = r.fusion.home >= 55 ? 'Victoire ' + f.home : r.fusion.away >= 40 ? 'Victoire ' + f.away : r.pOver > 0.52 ? 'Plus de 2.5' : 'GG OUI';
       let cote = r.fusion.home >= 55 ? 100 / r.fusion.home : r.fusion.away >= 40 ? 100 / r.fusion.away : r.pOver > 0.52 ? r.coteOver : r.coteGG; total *= cote;
-      txt += (i + 1) + '. ' + f.home + ' vs ' + f.away + '\n -> ' + choix + ' Cote ' + cote.toFixed(2) + ' | Score ' + r.top[0].s + ' (' + (r.top[0].p * 100).toFixed(1) + '%) | Corners ' + r.corners.total.toFixed(1) + '\n\n';
+      txt += (i + 1) + '. ' + f.home + ' vs ' + f.away + '-> ' + choix + ' Cote ' + cote.toFixed(2) + ' | Score ' + r.top[0].s + ' (' + (r.top[0].p * 100).toFixed(1) + '%) | Corners ' + r.corners.total.toFixed(1) + '\n';
     }
-    txt += 'COTE TOTALE: ' + total.toFixed(2); await msg.reply(txt);
+    txt += '\nCOTE TOTALE: ' + total.toFixed(2); await msg.reply(txt);
   }
 
   if (low.startsWith('!book')) {
-    const odds = await getOddsReels(); if (!odds.hasKey) { await msg.reply('Pas de ODDS_API_KEY - Va sur the-odds-api.com (500 req gratuites) et ajoute ODDS_API_KEY sur Railway'); return; }
-    if (odds.data.length === 0) { await msg.reply('Aucune cote dispo pour le moment'); return; }
-    let txt = 'VRAIES COTES BOOKMAKERS - ' + odds.data[0].book + '\n'; txt += odds.data.slice(0, 10).map(o => o.match + ' 1=' + o.H + ' N=' + o.D + ' 2=' + o.A).join('\n'); await msg.reply(txt);
+    const odds = await getOddsReels(); if (!odds.hasKey) { await msg.reply('Pas de ODDS_API_KEY'); return; }
+    if (odds.data.length === 0) { await msg.reply('Aucune cote'); return; }
+    let txt = 'BOOK - ' + odds.data[0].book + '\n' + odds.data.slice(0, 10).map(o => o.match + ' 1=' + o.H + ' N=' + o.D + ' 2=' + o.A).join('\n'); await msg.reply(txt);
   }
 });
 
